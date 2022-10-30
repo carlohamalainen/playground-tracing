@@ -144,10 +144,10 @@ instance Binary ZIP.B3 where
         put isDebug
         put parentSpanID
 
-doTheWork :: (MonadTrace m, MonadIO m) => Request -> m Response
-doTheWork Request{..} = ZPK.clientSpan "frontend.calldataservice" $ \(Just _b3) -> do
+processRequest :: (MonadTrace m, MonadIO m) => Request -> m Response
+processRequest Request{..} = ZPK.clientSpan "call dataservice" $ \(Just _b3) -> do
     xs <- forM reqWords $ \w -> do
-        ZPK.clientSpan "frontend.get" $ \(Just b3) -> do
+        ZPK.clientSpan "http get" $ \(Just b3) -> do
             let opts = foldl (&) W.defaults
                     $ map (\(k,v) -> W.header k .~ [cs v])
                     $ M.toList
@@ -233,15 +233,15 @@ processWork conn ourQueue w = do
     threadDelay 120_000
 
     ZPK.rootSpan alwaysSampled "worker" $ ZIP.serverSpan (workB3 w) $ do
-        childSpan "load_from_database"
+        childSpan "configure request"
                     $ threadDelay 500_000
 
-        resp <- childSpan "do_the_work"
-                    $ doTheWork $ workRequest w
+        resp <- childSpan "process request"
+                    $ processRequest $ workRequest w
 
         let w' = w { workResponse = Right $ Just resp }
 
-        x <- childSpan "publish_result"
+        x <- childSpan "publish result"
                 $ liftIO $ R.runRedis conn $ R.multiExec $ do
                     let k = cs $ resultKey w'
                     R.lpop ourQueue
@@ -291,28 +291,28 @@ ep = ZPK.Endpoint
 
 zipkinSettingsServer :: ZPK.Settings
 zipkinSettingsServer = ZPK.defaultSettings
-    { ZPK.settingsEndpoint          = Just "worker"
+    { ZPK.settingsEndpoint          = Just "hs.backend"
     , ZPK.settingsPublishPeriod     = Just $ secondsToNominalDiffTime 1
     }
 
 zipkinSettingsFrontEnd :: ZPK.Settings
 zipkinSettingsFrontEnd = ZPK.defaultSettings
-    { ZPK.settingsEndpoint          = Just "api"
+    { ZPK.settingsEndpoint          = Just "hs.frontend"
     , ZPK.settingsPublishPeriod     = Just $ secondsToNominalDiffTime 1
     }
 
 runRequest :: (MonadIO m, MonadLog m, MonadTrace m) => R.Connection -> Integer -> m ()
-runRequest conn timeoutSeconds = ZPK.rootSpan alwaysSampled "runRequest" $ do
+runRequest conn timeoutSeconds = ZPK.rootSpan alwaysSampled "handle request" $ do
     t0 <- liftIO $ getTime Monotonic
 
     -- pretend this came from an external client
-    req <- childSpan "parse_request"
+    req <- childSpan "parse request"
                 $ liftIO mkNewRequest
 
-    ew <- ZPK.clientSpan "call_worker" $ \(Just b3) ->
+    ew <- ZPK.clientSpan "insert queue" $ \(Just b3) ->
             liftIO $ tryAny $ insertIncoming conn req b3
 
-    childSpan "get_worker_result" $ do
+    childSpan "get result" $ do
         case ew of
             Right (Right (n, w)) -> do
                 ZPK.tag "work.id" $ cs $ show (workID w)
