@@ -24,3 +24,7 @@ cabal.project.local~
 frontend/dist-newstyle/*
 data-service/settings.yaml
 docker/elast_data
+data-service/include/
+data-service/lib/
+data-service/lib64/
+data-service/share/
