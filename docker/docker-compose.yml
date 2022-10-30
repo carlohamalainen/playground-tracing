@@ -1,0 +1,94 @@
+version: "3.7"
+
+services:
+  elasticsearch:
+    container_name: es-container
+    image: elastic/elasticsearch:7.17.4
+    restart: always
+    environment:
+      - xpack.security.enabled=false
+      - discovery.type=single-node
+      - cluster.routing.allocation.disk.watermark.low=99%
+      - cluster.routing.allocation.disk.watermark.high=99%
+      - cluster.routing.allocation.disk.watermark.flood_stage=99%
+
+    networks:
+      - elk-net
+    ports:
+      - 9200:9200
+    volumes:
+      - elast_data:/usr/share/elasticsearch/data
+
+  kibana:
+    container_name: kb-container
+    image: elastic/kibana:7.17.4
+    restart: always
+    environment:
+      - ELASTICSEARCH_HOSTS=http://es-container:9200
+    networks:
+      - elk-net
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+
+  zipkin:
+    container_name: zipkin-container
+    image: openzipkin/zipkin-slim:2.22.2
+    restart: always
+    environment:
+      - STORAGE_TYPE=elasticsearch
+      - ES_HOSTS=http://es-container:9200
+    networks:
+      - elk-net
+    depends_on:
+      - elasticsearch
+    ports:
+      - 9411:9411
+
+  redis:
+    container_name: redis-container
+    image: redis:7.0.0
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - elk-net
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+
+  grafana:
+    container_name: grafana-container
+    image: grafana/grafana
+    ports:
+      - 9000:3000
+    networks:
+      - elk-net
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  filebeat:
+    container_name: filebeat-container
+    image: elastic/kibana:7.17.4
+    restart: always
+    networks:
+      - elk-net
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./log_data:/log_data
+      - filebeat_data:/usr/share/filebeat/data
+
+volumes:
+  elast_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+  filebeat_data:
+    driver: local
+
+networks:
+  elk-net:
+    driver: bridge
