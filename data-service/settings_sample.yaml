@@ -1,0 +1,3 @@
+gcp_host: "xyz-123456:asia-southeast1:mydatabase"
+gcp_user: "postgres"
+gcp_password: "secret"
